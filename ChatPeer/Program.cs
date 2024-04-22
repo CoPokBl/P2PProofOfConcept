@@ -5,8 +5,8 @@ using System.Text;
 
 namespace ChatPeer;
 
-internal class Program {
-    public static bool Debug = false;
+internal static class Program {
+    public static bool Debug;
     
     public static int Main(string[] args) {
         Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -85,7 +85,6 @@ internal class Program {
         // Generate RSA asymmetric key for encryption
         RSA rsa = RSA.Create();
         byte[] rsaPublicKey = rsa.ExportSubjectPublicKeyInfo();
-        byte[] rsaPrivateKey = rsa.ExportRSAPrivateKey();
 
         Console.WriteLine("My public key: " + Convert.ToBase64String(rsaPublicKey));
 
@@ -156,6 +155,7 @@ internal class Program {
                     Console.WriteLine("PacketLength: " + receiveBytes.Length);
                 }
             }
+            // ReSharper disable once FunctionNeverReturns
         });
         msgListener.Start();
 
@@ -165,7 +165,6 @@ internal class Program {
         clientRsa.ImportSubjectPublicKeyInfo(peerPublicKey, out _);
 
         while (true) {
-            Console.Write("You: ");
             ConsoleKeyInfo key = Console.ReadKey(false);
             if (key.Key == ConsoleKey.Enter) {
                 Console.WriteLine();
@@ -188,15 +187,15 @@ internal class Program {
         }
 
 
-        return 0;
-
         void PrintScreen() {
             Console.Clear();
             Console.WriteLine("Chatting with peer...");
             foreach ((string sender, string message) in messages) {
                 Console.WriteLine(sender + ": " + message);
             }
-            Console.WriteLine("> " + inpState);
+            // ReSharper disable once AccessToModifiedClosure
+            // I know it's modified out of scope, that's the point
+            Console.Write("> " + inpState);
         }
     }
 }

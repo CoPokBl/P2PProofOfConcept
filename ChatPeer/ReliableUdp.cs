@@ -93,27 +93,40 @@ public class ReliableUdp {
     /// </summary>
     /// <param name="data"></param>
     /// <param name="endPoint"></param>
-    public void SendTo(byte[] data, IPEndPoint endPoint) {
+    /// <returns>True if the packet was sent successfully, otherwise false.</returns>
+    public bool SendTo(byte[] data, IPEndPoint endPoint, int timeout = -1) {
         _outgoing.Enqueue((data, endPoint));
         
         uint checksum = BitConverter.ToUInt32(MD5.HashData(data));
-        while (true) {
+        Stopwatch sw = Stopwatch.StartNew();
+        while (timeout == -1 || sw.ElapsedMilliseconds < timeout) {
             lock (_sentLock) {
                 if (_sent.Contains(checksum)) {
-                    break;
+                    return true;
                 }
             }
             
             Thread.Yield();
         }
+
+        return false;
     }
     
-    public int Receive(byte[] outputBuffer) {
-        while (true) {
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="outputBuffer"></param>
+    /// <param name="timeout"></param>
+    /// <returns>-1 is there was a timeout, otherwise the length of the received packet.</returns>
+    public int Receive(byte[] outputBuffer, int timeout = -1) {
+        Stopwatch sw = Stopwatch.StartNew();
+        while (timeout == -1 || sw.ElapsedMilliseconds < timeout) {
             if (!_incoming.TryDequeue(out byte[] data)) continue;
             Array.Copy(data, outputBuffer, data.Length);
             return data.Length;
         }
+
+        return -1;
     }
     
 }

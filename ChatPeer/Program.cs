@@ -6,9 +6,9 @@ using ChatPeer;
 
 Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 
-for (int i = 0; i < args.Length; i++) {
-    string arg = args[i];
-    Console.WriteLine("Arg " + i + ": " + arg);
+if (args.Length < 3) {
+    Console.WriteLine("Usage: ChatPeer <holepuncherIp> <holepuncherPort> <host|roomCode>");
+    return 1;
 }
 
 // Read ip and port from args
@@ -31,8 +31,10 @@ if (host) {
     Console.WriteLine($"Code: {code}");
     
     // Get our new peer
+    Console.WriteLine("Waiting for peer to connect... ");
     byte[] peerBytes = new byte[6];
     socket.Receive(peerBytes);
+    Console.Write("Done");
     
     ushort port = BitConverter.ToUInt16(peerBytes);
     byte[] ipBytes = peerBytes[2..];
@@ -88,12 +90,22 @@ byte[] peerPublicKey = new byte[rsaPublicKey.Length];
 // Host goes first with sending keys
 if (host) {
     Console.Write("Sending public key to peer... ");
-    reliableUdp.SendTo(rsaPublicKey, peerEndpoint);
+    bool success = reliableUdp.SendTo(rsaPublicKey, peerEndpoint, 5000);
+    if (!success) {
+        Console.Write("Timeout");
+        Console.WriteLine("Could not establish connection, exiting...");
+        return 1;
+    }
     Console.WriteLine("Done");
 }
 else {  // Client waits for host to send keys
     Console.Write("Waiting for public key from host... ");
-    reliableUdp.Receive(peerPublicKey);
+    int length = reliableUdp.Receive(peerPublicKey, 5000);
+    if (length == -1) {
+        Console.Write("Timeout");
+        Console.WriteLine("Could not establish connection, exiting...");
+        return 1;
+    }
     Console.WriteLine("Done");
     Console.WriteLine("Host public key: " + Convert.ToBase64String(peerPublicKey));
 }

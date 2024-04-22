@@ -1,0 +1,6 @@
+# Don't include archives, I use these to send to people
+*.zip
+*.tar.gz
+*.tar.xz
+*.rar
+*.7zip

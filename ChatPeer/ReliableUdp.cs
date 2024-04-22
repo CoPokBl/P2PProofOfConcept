@@ -16,6 +16,20 @@ public class ReliableUdp {
     private IPEndPoint _peer;
     
     private object _sentLock = new();
+    private bool _doesContactExist = false;
+    
+    private static void Debug(string msg) {
+        if (Program.Debug) {
+            Console.WriteLine(msg);
+        }
+    }
+
+    private void MadeContact() {
+        if (!_doesContactExist) {
+            Debug("Made contact with peer");
+            _doesContactExist = true;
+        }
+    }
 
     public ReliableUdp(Socket socket, IPEndPoint peer) {
         _socket = socket;
@@ -33,6 +47,7 @@ public class ReliableUdp {
         while (true) {
             byte[] outputBuffer = new byte[1024];
             int length = _socket.Receive(outputBuffer);
+            MadeContact();
             
             Array.Resize(ref outputBuffer, length);
 
@@ -64,8 +79,11 @@ public class ReliableUdp {
                 IPEndPoint endPoint = info.Item2;
                 byte[] checksum = MD5.HashData(data);
                 
+                Debug("[SEND] Sending packet with checksum: " + BitConverter.ToUInt32(checksum) + " to " + endPoint.Address + ":" + endPoint.Port + "...");
+                
                 while (true) {  // Go until ack
                     _socket.SendTo(data, endPoint);
+                    Debug("[SEND] Waiting for ack");
                     
                     _waitingForAck = checksum;
                     Stopwatch sw = new();
@@ -75,11 +93,14 @@ public class ReliableUdp {
                     }
 
                     if (_waitingForAck == null) {
+                        Debug("[SEND] Ack received");
                         lock (_sentLock) {
                             _sent.Add(BitConverter.ToUInt32(checksum));
                         }
                         break;
                     }
+
+                    Debug("[SEND] Timeout, resending packet");
                 }
             }
 

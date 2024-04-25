@@ -7,16 +7,18 @@ using System.Security.Cryptography;
 namespace ChatPeer;
 
 public class ReliableUdp {
+    public event Action? OnHeartbeat;
+    
     private readonly Socket _socket;
     private uint _acknowledged = 1;
     private byte[]? _waitingForAck;
     private readonly ConcurrentQueue<byte[]> _incoming = new();
-    private readonly ConcurrentQueue<(byte[], IPEndPoint)> _outgoing = new();
-    private readonly List<uint> _sent = new();
+    private readonly ConcurrentQueue<PendingSendMessage> _outgoing = new();
+    private readonly List<string> _sent = [];
     private IPEndPoint _peer;
     
     private object _sentLock = new();
-    private bool _doesContactExist = false;
+    private bool _doesContactExist;
     
     private static void Debug(string msg) {
         if (Program.Debug) {
@@ -51,10 +53,23 @@ public class ReliableUdp {
             
             Array.Resize(ref outputBuffer, length);
 
-            if (length == 1 && outputBuffer[0] == 69) {  // Holepunch packet
+            byte packetType = outputBuffer[0];
+            
+            if (packetType == 0) {  // Heartbeat
+                OnHeartbeat?.Invoke();
                 continue;  // Drop it
             }
+            if (packetType == 1) {  // Message
+                // Proceed to message processing
+            }
+            else {
+                continue;  // Invalid, drop it
+            }
+            
+            // Remove first byte from output
+            outputBuffer = outputBuffer[1..];
 
+            // Message packet
             if (_waitingForAck != null && outputBuffer.SequenceEqual(_waitingForAck)) {
                 _waitingForAck = null;
                 continue;
@@ -74,20 +89,19 @@ public class ReliableUdp {
     
     private void SendPackets() {
         while (true) {
-            if (_outgoing.TryDequeue(out (byte[], IPEndPoint) info)) {
-                byte[] data = info.Item1;
-                IPEndPoint endPoint = info.Item2;
+            if (_outgoing.TryDequeue(out PendingSendMessage? info)) {
+                byte[] data = info.Message;
+                IPEndPoint endPoint = info.Peer;
                 byte[] checksum = MD5.HashData(data);
                 
-                Debug("[SEND] Sending packet with checksum: " + BitConverter.ToUInt32(checksum) + " to " + endPoint.Address + ":" + endPoint.Port + "...");
+                Debug($"[SEND] Sending packet with checksum (Safe: {info.Safe}, From: {_socket.LocalEndPoint}): " + BitConverter.ToUInt32(checksum) + " to " + endPoint.Address + ":" + endPoint.Port + "...");
                 
-                while (true) {  // Go until ack
+                while (info.Safe) {  // Go until ack
                     _socket.SendTo(data, endPoint);
                     Debug("[SEND] Waiting for ack");
                     
                     _waitingForAck = checksum;
-                    Stopwatch sw = new();
-                    sw.Start();
+                    Stopwatch sw = Stopwatch.StartNew();
                     while (_waitingForAck != null && sw.ElapsedMilliseconds < 1000) {
                         Thread.Yield();
                     }
@@ -95,7 +109,7 @@ public class ReliableUdp {
                     if (_waitingForAck == null) {
                         Debug("[SEND] Ack received");
                         lock (_sentLock) {
-                            _sent.Add(BitConverter.ToUInt32(checksum));
+                            _sent.Add(info.Id);
                         }
                         break;
                     }
@@ -116,13 +130,18 @@ public class ReliableUdp {
     /// <param name="endPoint"></param>
     /// <returns>True if the packet was sent successfully, otherwise false.</returns>
     public bool SendTo(byte[] data, IPEndPoint endPoint, int timeout = -1) {
-        _outgoing.Enqueue((data, endPoint));
+        PendingSendMessage msg = new() {
+            Message = data,
+            Peer = endPoint,
+            Id = Guid.NewGuid().ToString()
+        };
+        _outgoing.Enqueue(msg);
         
         uint checksum = BitConverter.ToUInt32(MD5.HashData(data));
         Stopwatch sw = Stopwatch.StartNew();
         while (timeout == -1 || sw.ElapsedMilliseconds < timeout) {
             lock (_sentLock) {
-                if (_sent.Contains(checksum)) {
+                if (_sent.Contains(msg.Id)) {
                     return true;
                 }
             }
@@ -131,6 +150,17 @@ public class ReliableUdp {
         }
 
         return false;
+    }
+    
+    public bool UnsafeSendTo(byte[] data, IPEndPoint endPoint) {
+        PendingSendMessage msg = new() {
+            Message = data,
+            Peer = endPoint,
+            Id = Guid.NewGuid().ToString(),
+            Safe = false
+        };
+        _outgoing.Enqueue(msg);
+        return true;
     }
     
     /// <summary>

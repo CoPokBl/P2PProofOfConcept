@@ -5,6 +5,7 @@ namespace ChatPeer;
 
 public class HeartBeater(ReliableUdp udp, IPEndPoint peer) {
     private const int HeartbeatWarningThreshold = 5000;
+    private const int HeartbeatPeriod = 5000;
     
     public event Action? OnDegraded;
     public bool Degraded => _peerHeartbeatTimer.ElapsedMilliseconds > HeartbeatWarningThreshold;
@@ -29,7 +30,7 @@ public class HeartBeater(ReliableUdp udp, IPEndPoint peer) {
     private void Beat() {
         while (true) {
             udp.UnsafeSendTo([0], peer);
-            Thread.Sleep(1000);
+            Thread.Sleep(HeartbeatPeriod);
         }
     }
     

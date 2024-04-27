@@ -96,9 +96,14 @@ public class ReliableUdp {
                 
                 Debug($"[SEND] Sending packet with checksum (Safe: {info.Safe}, From: {_socket.LocalEndPoint}): " + BitConverter.ToUInt32(checksum) + " to " + endPoint.Address + ":" + endPoint.Port + "...");
                 
-                while (info.Safe) {  // Go until ack
+                while (true) {  // Go until ack
                     _socket.SendTo(data, endPoint);
-                    Debug("[SEND] Waiting for ack");
+
+                    if (!info.Safe) {  // Don't wait for ack
+                        break;
+                    }
+                    
+                    Debug("[SEND] Sent, waiting for ack");
                     
                     _waitingForAck = checksum;
                     Stopwatch sw = Stopwatch.StartNew();
@@ -133,11 +138,11 @@ public class ReliableUdp {
         PendingSendMessage msg = new() {
             Message = data,
             Peer = endPoint,
-            Id = Guid.NewGuid().ToString()
+            Id = Guid.NewGuid().ToString(),
+            Safe = true
         };
         _outgoing.Enqueue(msg);
         
-        uint checksum = BitConverter.ToUInt32(MD5.HashData(data));
         Stopwatch sw = Stopwatch.StartNew();
         while (timeout == -1 || sw.ElapsedMilliseconds < timeout) {
             lock (_sentLock) {
